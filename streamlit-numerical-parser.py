@@ -16,8 +16,6 @@ import numpy as np
 import io
 from PIL import Image
 
-# Ensure NLTK components are available (uncomment for first run)
-# nltk.download('punkt')
 
 class NumericalSyntaxParser:
     """Parser for English numeratives following Reynolds' framework"""
@@ -127,8 +125,8 @@ class NumericalSyntaxParser:
             else:
                 # Could be an ordinal or other form
                 if tokens[0].endswith('th') or tokens[0].endswith('st') or tokens[0].endswith('nd') or tokens[0].endswith('rd'):
-                    head = Tree('Head:Adj', [tokens[0]])
-                    return Tree('AdjP', [head])
+                    head = Tree('Head:D', [tokens[0]])
+                    return Tree('DP', [head])
                 else:
                     head = Tree('Head:D', [tokens[0]])
                     return Tree('DP', [head])
@@ -136,62 +134,95 @@ class NumericalSyntaxParser:
         # Look for coordination with "and"
         if 'and' in tokens:
             and_index = tokens.index('and')
-            left = self._build_tree(tokens[:and_index])
-            right = self._build_tree(tokens[and_index+1:])
+            
+            # Handle left side (before "and")
+            left_tokens = tokens[:and_index]
+            
+            # Basic numeral + magnitude pattern (e.g., "two thousand")
+            if len(left_tokens) == 2 and self.is_basic_numerative(left_tokens[0]) and self.is_magnitude(left_tokens[1]):
+                left_tree = Tree('Coordinate:DP', [
+                    Tree('Mod_fact:DP', [Tree('Head:D', [left_tokens[0]])]),
+                    Tree('Head:D', [left_tokens[1]])
+                ])
+            else:
+                # Process left side normally 
+                left_tree = Tree('Coordinate:DP', [self._build_simple_tree(left_tokens)])
+            
+            # Handle right side (after "and")
+            right_tokens = tokens[and_index+1:]
+            if len(right_tokens) == 1:
+                # Simple numeral after "and"
+                right_tree = Tree('Head:DP', [Tree('Head:D', [right_tokens[0]])])
+            else:
+                # Process right side as a complex structure
+                right_tree = Tree('Head:DP', [self._build_simple_tree(right_tokens)])
             
             # Create coordination structure following Reynolds' paper
             return Tree('Coordination', [
-                Tree('Coordinate:DP', [left]),
+                left_tree,
                 Tree('Coordinate_add:DP', [
                     Tree('Mk:Crd', ['and']),
-                    Tree('Head:DP', [right])
+                    right_tree
                 ])
             ])
         
+        # If no coordination, use simpler tree building
+        return self._build_simple_tree(tokens)
+    
+    def _build_simple_tree(self, tokens):
+        """Build tree for expressions without coordination"""
+        # Single token case
+        if len(tokens) == 1:
+            head = Tree('Head:D', [tokens[0]])
+            return Tree('DP', [head])
+        
+        # Basic numeral + magnitude pattern (e.g., "two thousand")
+        if len(tokens) == 2 and self.is_basic_numerative(tokens[0]) and self.is_magnitude(tokens[1]):
+            return Tree('DP', [
+                Tree('Mod_fact:DP', [Tree('Head:D', [tokens[0]])]),
+                Tree('Head:D', [tokens[1]])
+            ])
+        
+        # More complex cases
         # Look for factor + magnitude pattern
         for i, token in enumerate(tokens):
             if self.is_magnitude(token) and i > 0:
-                factor = self._build_tree(tokens[:i])
-                rest = tokens[i+1:] if i+1 < len(tokens) else []
+                # Process tokens before the magnitude term
+                if i == 1:
+                    # Simple factor (e.g., "two million")
+                    factor = Tree('Head:D', [tokens[0]])
+                else:
+                    # Complex factor (e.g., "twenty-two million")
+                    factor = self._build_simple_tree(tokens[:i])
                 
-                # Create head with magnitude term
-                head = Tree('Head:D', [token])
+                rest = tokens[i+1:] if i+1 < len(tokens) else []
                 
                 if not rest:  # Just factor + magnitude
                     return Tree('DP', [
                         Tree('Mod_fact:DP', [factor]),
-                        head
+                        Tree('Head:D', [token])
                     ])
-                else:  # More complex structure with addition
-                    magnitude = Tree('DP', [
+                else:  # More complex structure
+                    magnitude_part = Tree('DP', [
                         Tree('Mod_fact:DP', [factor]),
-                        head
+                        Tree('Head:D', [token])
                     ])
                     
-                    addition = self._build_tree(rest)
-                    # Complex coordination structure
-                    return Tree('Coordination', [
-                        Tree('Coordinate:DP', [magnitude]),
-                        Tree('Coordinate_add:DP', [
-                            Tree('Mk:Crd', ['and']),
-                            Tree('Head:DP', [addition])
-                        ])
-                    ])
+                    # Process the rest
+                    if len(rest) == 1:
+                        rest_part = Tree('DP', [Tree('Head:D', [rest[0]])])
+                    else:
+                        rest_part = self._build_simple_tree(rest)
+                    
+                    # Combine with flat structure
+                    return Tree('DP', [magnitude_part, rest_part])
         
-        # Fall back for other patterns - create basic DP structure
-        if len(tokens) > 1:
-            # For sequential numerals, use a simple flat structure
-            children = []
-            for token in tokens:
-                if self.is_basic_numerative(token):
-                    children.append(Tree('Head:D', [token]))
-                elif self.is_magnitude(token):
-                    children.append(Tree('Head:D', [token]))
-                else:
-                    children.append(Tree('Head:D', [token]))
-            return Tree('DP', children)
-        
-        return Tree('DP', [Tree('Head:D', tokens[0])])
+        # Fall back for other patterns
+        children = []
+        for token in tokens:
+            head = Tree('Head:D', [token])
+            children.append(head)
+        return Tree('DP', children)
     
     def determine_category(self, text):
         """
