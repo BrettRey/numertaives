@@ -16,6 +16,8 @@ import numpy as np
 import io
 from PIL import Image
 
+# Ensure NLTK components are available (uncomment for first run)
+# nltk.download('punkt')
 
 class NumericalSyntaxParser:
     """Parser for English numeratives following Reynolds' framework"""
@@ -76,7 +78,14 @@ class NumericalSyntaxParser:
         tokens = []
         for part in text.lower().split():
             if '-' in part and not part.endswith('th'):
-                tokens.extend(part.split('-'))
+                # Check if it's a compound like "twenty-seven"
+                parts = part.split('-')
+                if len(parts) == 2 and parts[0] in self.decades and parts[1] in self.single_digits:
+                    # Keep compounds like "twenty-seven" as a single token
+                    tokens.append(part)
+                else:
+                    # Split other hyphenated forms
+                    tokens.extend(part.split('-'))
             else:
                 tokens.append(part)
         return tokens
@@ -88,6 +97,14 @@ class NumericalSyntaxParser:
         lexemes and larger expressions are syntactic constructions.
         """
         tokens = self.tokenize_numerative(text)
+        
+        # Check for compound forms like "twenty-seven"
+        if len(tokens) == 1 and '-' in tokens[0] and not tokens[0].endswith('th'):
+            parts = tokens[0].split('-')
+            if len(parts) == 2 and parts[0] in self.decades and parts[1] in self.single_digits:
+                # Treat it as a single lexical item, just like "seven"
+                head = Tree('Head:D', [tokens[0]])
+                return Tree('DP', [head])
         
         # Check for "two thousandth" pattern (ordinal with cardinal base)
         if len(tokens) == 2 and self.is_basic_numerative(tokens[0]) and tokens[1].endswith('th'):
@@ -370,25 +387,23 @@ class NumericalSyntaxParser:
                 
                 # Create rectangular box
                 box = dict(facecolor='white', edgecolor=edge_color, boxstyle='round,pad=0.5', linewidth=linewidth)
+                
+                # Draw the node text (non-terminal nodes)
+                ax.text(x_pos, y_pos, node_text, 
+                        ha='center', va='center', 
+                        bbox=box, fontsize=9)
             else:
                 # For leaf nodes (lexical items) - italicize as in the paper
                 node_text = str(tree)
                 box = dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3')
-                # Make lexical items italic
                 ax.text(x_pos, y_pos, node_text, 
                         ha='center', va='center', 
                         bbox=box, fontsize=9, style='italic')
-                return
-            
-            # Draw the node text (non-terminal nodes)
-            ax.text(x_pos, y_pos, node_text, 
-                    ha='center', va='center', 
-                    bbox=box, fontsize=9)
             
             # Draw line to parent
             if parent_x is not None and parent_y is not None:
                 # If this is a Head node, make the line thicker as in Reynolds' paper
-                if ":" in node_label and node_label.split(":")[0] == "Head":
+                if isinstance(tree, Tree) and ":" in tree.label() and tree.label().split(":")[0] == "Head":
                     ax.plot([parent_x, x_pos], [parent_y, y_pos], 'k-', linewidth=2.0)
                 else:
                     ax.plot([parent_x, x_pos], [parent_y, y_pos], 'k-', linewidth=1.0)
