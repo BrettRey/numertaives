@@ -91,31 +91,62 @@ class NumericalSyntaxParser:
         """
         tokens = self.tokenize_numerative(text)
         
+        # Check for "two thousandth" pattern (ordinal with cardinal base)
+        if len(tokens) == 2 and self.is_basic_numerative(tokens[0]) and tokens[1].endswith('th'):
+            # Create proper structure for ordinal with cardinal base
+            cardinal = Tree('Head:D', [tokens[0]])
+            ordinal = Tree('Head:D', [tokens[1]])
+            return Tree('DP', [cardinal, ordinal])
+        
         # Check if this is a basic numerative (0-99)
         if len(tokens) == 1 and self.is_basic_numerative(tokens[0]):
-            return Tree('D', [tokens[0]])
+            # Create proper projection: lexical head D projects a DP
+            head = Tree('Head:D', [tokens[0]])
+            return Tree('DP', [head])
+            
+        # Check if this is an ordinal (adjective)
+        if len(tokens) == 1 and (tokens[0].endswith('th') or tokens[0].endswith('st') or 
+                               tokens[0].endswith('nd') or tokens[0].endswith('rd')):
+            # In Reynolds' framework, ordinals are still determinatives
+            head = Tree('Head:D', [tokens[0]])
+            return Tree('DP', [head])
         
         # Handle more complex numeratives
         return self._build_tree(tokens)
     
     def _build_tree(self, tokens):
-        """Build a syntax tree for a numerative expression"""
+        """Build a syntax tree for a numerative expression following Reynolds' framework"""
         # Simple case: single token
         if len(tokens) == 1:
             if self.is_basic_numerative(tokens[0]):
-                return Tree('D', [tokens[0]])
+                head = Tree('Head:D', [tokens[0]])
+                return Tree('DP', [head])
             elif self.is_magnitude(tokens[0]):
-                return Tree('D', [tokens[0]])
+                head = Tree('Head:D', [tokens[0]])
+                return Tree('DP', [head])
             else:
                 # Could be an ordinal or other form
-                return Tree('Adj', [tokens[0]]) if tokens[0].endswith('th') else Tree('D', [tokens[0]])
+                if tokens[0].endswith('th') or tokens[0].endswith('st') or tokens[0].endswith('nd') or tokens[0].endswith('rd'):
+                    head = Tree('Head:Adj', [tokens[0]])
+                    return Tree('AdjP', [head])
+                else:
+                    head = Tree('Head:D', [tokens[0]])
+                    return Tree('DP', [head])
         
         # Look for coordination with "and"
         if 'and' in tokens:
             and_index = tokens.index('and')
             left = self._build_tree(tokens[:and_index])
             right = self._build_tree(tokens[and_index+1:])
-            return Tree('Coordination', [left, Tree('Crd', ['and']), right])
+            
+            # Create coordination structure following Reynolds' paper
+            return Tree('Coordination', [
+                Tree('Coordinate:DP', [left]),
+                Tree('Coordinate_add:DP', [
+                    Tree('Mk:Crd', ['and']),
+                    Tree('Head:DP', [right])
+                ])
+            ])
         
         # Look for factor + magnitude pattern
         for i, token in enumerate(tokens):
@@ -123,22 +154,44 @@ class NumericalSyntaxParser:
                 factor = self._build_tree(tokens[:i])
                 rest = tokens[i+1:] if i+1 < len(tokens) else []
                 
+                # Create head with magnitude term
+                head = Tree('Head:D', [token])
+                
                 if not rest:  # Just factor + magnitude
                     return Tree('DP', [
-                        Tree('Mod_fact', [factor]),
-                        Tree('D', [token])
+                        Tree('Mod_fact:DP', [factor]),
+                        head
                     ])
                 else:  # More complex structure with addition
                     magnitude = Tree('DP', [
-                        Tree('Mod_fact', [factor]),
-                        Tree('D', [token])
+                        Tree('Mod_fact:DP', [factor]),
+                        head
                     ])
                     
                     addition = self._build_tree(rest)
-                    return Tree('Coordination', [magnitude, addition])
+                    # Complex coordination structure
+                    return Tree('Coordination', [
+                        Tree('Coordinate:DP', [magnitude]),
+                        Tree('Coordinate_add:DP', [
+                            Tree('Mk:Crd', ['and']),
+                            Tree('Head:DP', [addition])
+                        ])
+                    ])
         
-        # Fall back for other patterns
-        return Tree('DP', tokens)
+        # Fall back for other patterns - create basic DP structure
+        if len(tokens) > 1:
+            # For sequential numerals, use a simple flat structure
+            children = []
+            for token in tokens:
+                if self.is_basic_numerative(token):
+                    children.append(Tree('Head:D', [token]))
+                elif self.is_magnitude(token):
+                    children.append(Tree('Head:D', [token]))
+                else:
+                    children.append(Tree('Head:D', [token]))
+            return Tree('DP', children)
+        
+        return Tree('DP', [Tree('Head:D', tokens[0])])
     
     def determine_category(self, text):
         """
@@ -262,27 +315,66 @@ class NumericalSyntaxParser:
         
         def draw_tree(tree, depth=0, x_pos=0, parent_x=None, parent_y=None):
             # Calculate position
-            y_pos = -depth
+            y_pos = -depth * 1.5  # Increase spacing for better readability
             
             # Draw node
-            node_text = tree.label() if isinstance(tree, Tree) else str(tree)
+            if isinstance(tree, Tree):
+                node_label = tree.label()
+                
+                # Format label according to Reynolds' paper
+                if ":" in node_label:
+                    function_label, category_label = node_label.split(":")
+                    # For non-root nodes with function and category labels
+                    node_text = f"{function_label}\n{category_label}"
+                    
+                    # Special formatting for Head:D with bold line
+                    is_head = function_label == "Head"
+                    linewidth = 2.0 if is_head else 1.0 
+                    edge_color = 'black'
+                else:
+                    # For root nodes (just category label)
+                    node_text = node_label
+                    linewidth = 1.0
+                    edge_color = 'black'
+                
+                # Create rectangular box
+                box = dict(facecolor='white', edgecolor=edge_color, boxstyle='round,pad=0.5', linewidth=linewidth)
+            else:
+                # For leaf nodes (lexical items) - italicize as in the paper
+                node_text = str(tree)
+                box = dict(facecolor='white', edgecolor='black', boxstyle='round,pad=0.3')
+                # Make lexical items italic
+                ax.text(x_pos, y_pos, node_text, 
+                        ha='center', va='center', 
+                        bbox=box, fontsize=9, style='italic')
+                return
+            
+            # Draw the node text (non-terminal nodes)
             ax.text(x_pos, y_pos, node_text, 
                     ha='center', va='center', 
-                    bbox=dict(facecolor='white', edgecolor='black', boxstyle='round'))
+                    bbox=box, fontsize=9)
             
             # Draw line to parent
             if parent_x is not None and parent_y is not None:
-                ax.plot([parent_x, x_pos], [parent_y, y_pos], 'k-')
+                # If this is a Head node, make the line thicker as in Reynolds' paper
+                if ":" in node_label and node_label.split(":")[0] == "Head":
+                    ax.plot([parent_x, x_pos], [parent_y, y_pos], 'k-', linewidth=2.0)
+                else:
+                    ax.plot([parent_x, x_pos], [parent_y, y_pos], 'k-', linewidth=1.0)
             
             # Process children
             if isinstance(tree, Tree):
                 num_children = len(tree)
-                child_width = 2.0 / (2**depth)
+                
+                # Adjust width based on depth and number of children
+                base_width = 10.0  # Start with a wider spacing
+                child_width = base_width / (2**depth)  # Decrease width with depth
                 
                 child_positions = []
                 for i, child in enumerate(tree):
-                    # Calculate position for child
-                    child_x = x_pos + (i - (num_children-1)/2) * child_width * 2
+                    # Calculate position for child - spread them out more
+                    offset = (i - (num_children-1)/2) * child_width
+                    child_x = x_pos + offset
                     child_positions.append(child_x)
                     
                     # Recursively draw child
@@ -291,9 +383,13 @@ class NumericalSyntaxParser:
         # Start drawing from the root
         draw_tree(tree)
         
-        # Adjust plot limits
-        ax.set_xlim(-5, 5)
-        ax.set_ylim(-8, 1)
+        # Adjust plot limits based on tree complexity
+        leaf_count = len(tree.leaves())
+        width_factor = max(5, leaf_count * 0.8)  # Adjust width based on number of leaves
+        depth_factor = tree.height()  # Get tree depth
+        
+        ax.set_xlim(-width_factor, width_factor)
+        ax.set_ylim(-depth_factor * 2, 1)
         ax.axis('off')
         ax.set_title(f"Syntax Tree: {' '.join(tree.leaves())}")
         
