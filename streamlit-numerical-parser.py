@@ -73,26 +73,26 @@ class NumericalSyntaxParser:
         return word in self.magnitudes
     
     def tokenize_numerative(self, text):
-    raw_tokens = text.lower().split()
-    tokens = []
-    skip_next = False
-
-    for i, token in enumerate(raw_tokens):
-        if skip_next:
-            skip_next = False
-            continue
-        
-        # If this token is a decade word and the next token is a single-digit word,
-        # merge them into a single token like "twenty-seven".
-        if (i < len(raw_tokens) - 1
-            and token in self.decades
-            and raw_tokens[i+1] in self.single_digits):
-            tokens.append(f"{token}-{raw_tokens[i+1]}")
-            skip_next = True
-        else:
-            tokens.append(token)
-
-    return tokens
+        raw_tokens = text.lower().split()
+        tokens = []
+        skip_next = False
+    
+        for i, token in enumerate(raw_tokens):
+            if skip_next:
+                skip_next = False
+                continue
+            
+            # If this token is a decade word and the next token is a single-digit word,
+            # merge them into a single token like "twenty-seven".
+            if (i < len(raw_tokens) - 1
+                and token in self.decades
+                and raw_tokens[i+1] in self.single_digits):
+                tokens.append(f"{token}-{raw_tokens[i+1]}")
+                skip_next = True
+            else:
+                tokens.append(token)
+    
+        return tokens
 
     
     def parse_numerative(self, text):
