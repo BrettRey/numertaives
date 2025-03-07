@@ -434,8 +434,8 @@ class NumericalSyntaxParser:
         width_factor = max(5, leaf_count * 0.8)  # Adjust width based on number of leaves
         depth_factor = tree.height()  # Get tree depth
         
-        ax.set_xlim(-width_factor, width_factor)
-        ax.set_ylim(-depth_factor * 2, 1)
+        #ax.set_xlim(-width_factor, width_factor)
+        #ax.set_ylim(-depth_factor * 2, 1)
         ax.axis('off')
         ax.set_title(f"Syntax Tree: {' '.join(tree.leaves())}")
         
@@ -534,7 +534,7 @@ def main():
                     with col2:
                         st.subheader("Syntactic Structure (Tree)")
                         img = parser.visualize_tree(tree)
-                        st.image(img, use_column_width=True)
+                        st.image(img, use_container_width=True)
                 except Exception as e:
                     st.error(f"Error processing expression: {str(e)}")
     
