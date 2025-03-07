@@ -192,66 +192,66 @@ class NumericalSyntaxParser:
         return self._build_simple_tree(tokens)
     
     def _build_simple_tree(self, tokens):
-    """
-    Build a syntax tree for expressions without explicit 'and' coordination,
-    handling factor+magnitude combos recursively.
-    """
-    # Single token: just a DP with one Head
-    if len(tokens) == 1:
-        return Tree('DP', [Tree('Head:D', [tokens[0]])])
+        """
+        Build a syntax tree for expressions without explicit 'and' coordination,
+        handling factor+magnitude combos recursively.
+        """
+        # Single token: just a DP with one Head
+        if len(tokens) == 1:
+            return Tree('DP', [Tree('Head:D', [tokens[0]])])
+        
+        # If there's more than one token, we try to see if there's a magnitude among them.
+        # We'll scan left-to-right for the FIRST magnitude. That ensures we parse
+        # e.g. "two hundred million" as factor+magnitude, then that entire chunk
+        # as factor+magnitude if there's another magnitude, and so on.
+        for i, token in enumerate(tokens):
+            if self.is_magnitude(token) and i > 0:
+                # Everything before i is the factor (which might itself contain a magnitude).
+                factor_tree = self._build_simple_tree(tokens[:i])  # Recursively parse the factor
+                # Wrap it with a Mod_fact label
+                factor_dp = Tree('Mod_fact:DP', [factor_tree])
     
-    # If there's more than one token, we try to see if there's a magnitude among them.
-    # We'll scan left-to-right for the FIRST magnitude. That ensures we parse
-    # e.g. "two hundred million" as factor+magnitude, then that entire chunk
-    # as factor+magnitude if there's another magnitude, and so on.
-    for i, token in enumerate(tokens):
-        if self.is_magnitude(token) and i > 0:
-            # Everything before i is the factor (which might itself contain a magnitude).
-            factor_tree = self._build_simple_tree(tokens[:i])  # Recursively parse the factor
-            # Wrap it with a Mod_fact label
-            factor_dp = Tree('Mod_fact:DP', [factor_tree])
-
-            # Now we have our magnitude head
-            head_dp = Tree('Head:D', [token])
-            # So "factor + magnitude" is one DP
-            magnitude_part = Tree('DP', [factor_dp, head_dp])
-
-            # Check if there are leftover tokens after this magnitude
-            rest = tokens[i+1:]
-            if not rest:
-                # e.g. "two hundred million" with nothing following
-                return magnitude_part
-
-            # If there *are* leftover tokens, see if the first leftover is literally "and".
-            if rest[0] == 'and':
-                # We'll parse everything after 'and' as the next coordinate
-                next_coord = self._build_simple_tree(rest[1:])
-                return Tree('Coordination', [
-                    magnitude_part,
-                    Tree('Coordinate_add:DP', [
-                        Tree('Mk:Crd', ['and']),
-                        next_coord
+                # Now we have our magnitude head
+                head_dp = Tree('Head:D', [token])
+                # So "factor + magnitude" is one DP
+                magnitude_part = Tree('DP', [factor_dp, head_dp])
+    
+                # Check if there are leftover tokens after this magnitude
+                rest = tokens[i+1:]
+                if not rest:
+                    # e.g. "two hundred million" with nothing following
+                    return magnitude_part
+    
+                # If there *are* leftover tokens, see if the first leftover is literally "and".
+                if rest[0] == 'and':
+                    # We'll parse everything after 'and' as the next coordinate
+                    next_coord = self._build_simple_tree(rest[1:])
+                    return Tree('Coordination', [
+                        magnitude_part,
+                        Tree('Coordinate_add:DP', [
+                            Tree('Mk:Crd', ['and']),
+                            next_coord
+                        ])
                     ])
-                ])
-            else:
-                # Asyndetic coordination: no explicit "and"
-                next_coord = self._build_simple_tree(rest)
-                return Tree('Coordination', [
-                    magnitude_part,
-                    Tree('Coordinate_add:DP', [
-                        # We can omit a 'Mk:Crd' node or store an empty string
-                        # if you still want a slot for it:
-                        # Tree('Mk:Crd', ['∅']),
-                        next_coord
+                else:
+                    # Asyndetic coordination: no explicit "and"
+                    next_coord = self._build_simple_tree(rest)
+                    return Tree('Coordination', [
+                        magnitude_part,
+                        Tree('Coordinate_add:DP', [
+                            # We can omit a 'Mk:Crd' node or store an empty string
+                            # if you still want a slot for it:
+                            # Tree('Mk:Crd', ['∅']),
+                            next_coord
+                        ])
                     ])
-                ])
-
-    # If no magnitude was found, we might be dealing with multiple tokens
-    # that are all basic numeratives (like "twenty-one", "two", "ten").
-    # We'll just build a DP with each token as a separate Head:D.
-    # Or you could refine this further if needed.
-    children = [Tree('Head:D', [token]) for token in tokens]
-    return Tree('DP', children)
+    
+        # If no magnitude was found, we might be dealing with multiple tokens
+        # that are all basic numeratives (like "twenty-one", "two", "ten").
+        # We'll just build a DP with each token as a separate Head:D.
+        # Or you could refine this further if needed.
+        children = [Tree('Head:D', [token]) for token in tokens]
+        return Tree('DP', children)
 
     
     def determine_category(self, text):
