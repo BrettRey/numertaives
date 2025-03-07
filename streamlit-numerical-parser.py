@@ -73,22 +73,27 @@ class NumericalSyntaxParser:
         return word in self.magnitudes
     
     def tokenize_numerative(self, text):
-        """Split a verbal numerative into tokens"""
-        # Handle hyphenated compound numeratives
-        tokens = []
-        for part in text.lower().split():
-            if '-' in part and not part.endswith('th'):
-                # Check if it's a compound like "twenty-seven"
-                parts = part.split('-')
-                if len(parts) == 2 and parts[0] in self.decades and parts[1] in self.single_digits:
-                    # Keep compounds like "twenty-seven" as a single token
-                    tokens.append(part)
-                else:
-                    # Split other hyphenated forms
-                    tokens.extend(part.split('-'))
-            else:
-                tokens.append(part)
-        return tokens
+    raw_tokens = text.lower().split()
+    tokens = []
+    skip_next = False
+
+    for i, token in enumerate(raw_tokens):
+        if skip_next:
+            skip_next = False
+            continue
+        
+        # If this token is a decade word and the next token is a single-digit word,
+        # merge them into a single token like "twenty-seven".
+        if (i < len(raw_tokens) - 1
+            and token in self.decades
+            and raw_tokens[i+1] in self.single_digits):
+            tokens.append(f"{token}-{raw_tokens[i+1]}")
+            skip_next = True
+        else:
+            tokens.append(token)
+
+    return tokens
+
     
     def parse_numerative(self, text):
         """
@@ -232,7 +237,14 @@ class NumericalSyntaxParser:
                         rest_part = self._build_simple_tree(rest)
                     
                     # Combine with flat structure
-                    return Tree('DP', [magnitude_part, rest_part])
+                    return Tree('Coordination', [
+                        magnitude_part,
+                        Tree('Coordinate_add:DP', [
+                            Tree('Mk:Crd', ['and']),
+                            rest_part
+                        ])
+                    ])
+
         
         # Fall back for other patterns
         children = []
